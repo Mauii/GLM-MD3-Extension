@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import pk3
-from .constants import TEXTURE_EXTS
+from .constants import MODEL_CATEGORIES, TEXTURE_EXTS
 from .data_types import FileSource, ModelSource
 
 PK3_INDEX_CACHE: Optional[Dict] = None
@@ -54,14 +54,19 @@ def ensure_index(base_dir: Path) -> Optional[Dict]:
 
 def build_index(base_dir: Path) -> Dict:
     models_tmp: Dict[str, Dict] = {}
+    category_models: Dict[str, Dict[str, Dict]] = {
+        category: {} for category in MODEL_CATEGORIES if category != "players"
+    }
     textures_by_rel: Dict[str, List[FileSource]] = {}
     textures_by_stem: Dict[str, List[FileSource]] = {}
+    textures_by_dir: Dict[str, List[FileSource]] = {}
     gla_index: Dict[str, List[FileSource]] = {}
 
     def add_texture(rel: Path, origin: str, container: Optional[Path]):
         fs = FileSource(origin, container, rel)
         textures_by_rel.setdefault(normalize_rel(rel), []).append(fs)
         textures_by_stem.setdefault(rel.stem.lower(), []).append(fs)
+        textures_by_dir.setdefault(normalize_rel(rel.parent), []).append(fs)
 
     def add_gla(rel: Path, origin: str, container: Optional[Path]):
         fs = FileSource(origin, container, rel)
@@ -69,6 +74,52 @@ def build_index(base_dir: Path) -> Dict:
 
     def get_entry(name: str) -> Dict:
         return models_tmp.setdefault(name, {"sources": {}, "skins": set()})
+
+    def add_category_model(rel: Path, origin: str, container: Optional[Path]) -> None:
+        if len(rel.parts) < 3 or rel.parts[0].lower() != "models":
+            return
+        category = rel.parts[1].lower()
+        if category not in category_models or rel.suffix.lower() not in {".glm", ".md3"}:
+            return
+
+        if category == "map_objects":
+            if len(rel.parts) < 4:
+                return
+            group = rel.parts[2]
+            key = normalize_rel(rel)
+            label = rel.name
+        elif category == "weapons2":
+            if len(rel.parts) < 4:
+                return
+            group = rel.parts[2]
+            key = normalize_rel(rel)
+            label = rel.name
+        else:
+            group = ""
+            key = normalize_rel(rel)
+            label = rel.stem
+
+        entries = category_models[category]
+        existing = entries.get(key)
+        priority = 0 if origin == "disk" else 1
+        format_priority = 0 if rel.suffix.lower() == ".md3" else 1
+        if existing and (
+            existing["priority"],
+            existing["format_priority"],
+        ) <= (priority, format_priority):
+            return
+        entries[key] = {
+            "name": key,
+            "label": label,
+            "group": group,
+            "source": "disk" if origin == "disk" else container.name if container else "pk3",
+            "origin": origin,
+            "container": container,
+            "rel_path": rel,
+            "format": rel.suffix.lower()[1:],
+            "priority": priority,
+            "format_priority": format_priority,
+        }
 
     # Scan PK3 archives
     for pk3_path in sorted(base_dir.rglob("*.pk3")):
@@ -84,6 +135,7 @@ def build_index(base_dir: Path) -> Dict:
                     if suffix in TEXTURE_EXTS:
                         add_texture(rel, "pk3", pk3_path)
                         continue
+                    add_category_model(rel, "pk3", pk3_path)
                     if len(rel.parts) < 3:
                         continue
                     if rel.parts[0].lower() != "models" or rel.parts[1].lower() != "players":
@@ -109,6 +161,21 @@ def build_index(base_dir: Path) -> Dict:
             continue
 
     # Scan disk models
+    models_root = base_dir / "models"
+    if models_root.is_dir():
+        for category_dir in models_root.iterdir():
+            if not category_dir.is_dir() or category_dir.name.lower() == "players":
+                continue
+            if category_dir.name.lower() not in category_models:
+                continue
+            for model_file in category_dir.rglob("*"):
+                if model_file.is_file():
+                    rel = model_file.relative_to(base_dir)
+                    if model_file.suffix.lower() in TEXTURE_EXTS:
+                        add_texture(rel, "disk", None)
+                    else:
+                        add_category_model(rel, "disk", None)
+
     models_dir = base_dir / "models" / "players"
     if models_dir.is_dir():
         for model_dir in models_dir.iterdir():
@@ -157,7 +224,9 @@ def build_index(base_dir: Path) -> Dict:
     return {
         "base": base_dir,
         "models": models,
+        "category_models": category_models,
         "textures_by_rel": textures_by_rel,
         "textures_by_stem": textures_by_stem,
+        "textures_by_dir": textures_by_dir,
         "gla_index": gla_index,
     }

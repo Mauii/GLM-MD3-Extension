@@ -1,13 +1,13 @@
 ﻿from __future__ import annotations
 
 bl_info = {
-    "name": "PK3 Model Browser",
+    "name": "GLM/MD3 Extension",
     "author": "Maui",
     "version": (0, 5, 6),
-    "blender": (3, 0, 0),
+    "blender": (5, 2, 0),
     "location": "View3D > Sidebar > PK3",
-    "description": "Browse PK3 files and import Jedi Academy GLM with skins and textures",
-    "category": "Import-Export",
+    "description": "Browse PK3 files, import/extract md3/glm from assets, Weapon Modding tools.",
+    "category": "Import-Export Extension",
 }
 
 # All functionality lives in addon_impl to keep __init__ lean.

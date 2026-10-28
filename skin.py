@@ -111,6 +111,35 @@ def derive_skin_suffix(skin_rel: Path) -> str:
     return stem
 
 
+def collect_model_texture_assets(index: Dict, model_name: str):
+    entry = index["models"].get(model_name)
+    if not entry:
+        return []
+    primary: ModelSource = entry["primary"]
+    rel_dirs: set[str] = set()
+    if primary.glm:
+        rel_dirs.add(normalize_rel(primary.glm.parent))
+    for src in entry["sources"]:
+        if src.glm:
+            rel_dirs.add(normalize_rel(src.glm.parent))
+        for skin in src.skins:
+            rel_dirs.add(normalize_rel(Path(skin).parent))
+        for gla in src.glas:
+            rel_dirs.add(normalize_rel(Path(gla).parent))
+    rel_dirs.add("textures")
+
+    assets: List[Tuple[FileSource, Path]] = []
+    seen: set[str] = set()
+    for rel_dir in sorted(rel_dirs):
+        for fs in index["textures_by_dir"].get(rel_dir, []):
+            norm = normalize_rel(fs.rel_path)
+            if norm in seen:
+                continue
+            seen.add(norm)
+            assets.append((fs, fs.rel_path))
+    return assets
+
+
 def collect_assets_for_skin(index: Dict, base_dir: Path, model_name: str, skin_rel: Path):
     entry = index["models"].get(model_name)
     if not entry:
@@ -141,5 +170,10 @@ def collect_assets_for_skin(index: Dict, base_dir: Path, model_name: str, skin_r
     gla_src = find_gla(index, model_name, entry)
     if gla_src:
         assets.append((gla_src, gla_src.rel_path))
-    assets.extend(textures)
+    for model_tex in collect_model_texture_assets(index, model_name):
+        assets.append(model_tex)
+    for texture in textures:
+        rel_name = normalize_rel(texture[1])
+        if not any(normalize_rel(existing[1]) == rel_name for existing in assets):
+            assets.append(texture)
     return assets, missing, replacements

@@ -6,17 +6,28 @@ import bpy
 from bpy.props import PointerProperty
 
 from .props import PK3BrowserProperties, PK3ModelItem
-from .operators import PK3_OT_apply_skin, PK3_OT_import_model, PK3_OT_refresh_models, PK3_OT_save_textures
+from .operators import (
+    PK3_OT_apply_skin,
+    PK3_OT_extract_model,
+    PK3_OT_import_model,
+    PK3_OT_prepare_modview,
+    PK3_OT_prepare_weapon_export,
+    PK3_OT_refresh_models,
+    PK3_OT_setup_weapon_preview,
+)
 from .ui import PK3_PT_panel, PK3_UL_models
 
 CLASSES = (
     PK3ModelItem,
     PK3BrowserProperties,
-    PK3_UL_models,
     PK3_OT_refresh_models,
     PK3_OT_import_model,
     PK3_OT_apply_skin,
-    PK3_OT_save_textures,
+    PK3_OT_extract_model,
+    PK3_OT_prepare_modview,
+    PK3_OT_prepare_weapon_export,
+    PK3_OT_setup_weapon_preview,
+    PK3_UL_models,
     PK3_PT_panel,
 )
 
@@ -24,10 +35,10 @@ CLASSES = (
 def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.pk3_browser = PointerProperty(type=PK3BrowserProperties)
+    bpy.types.Scene.glm_md3_extension = PointerProperty(type=PK3BrowserProperties)
 
 
 def unregister():
-    del bpy.types.Scene.pk3_browser
+    del bpy.types.Scene.glm_md3_extension
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)

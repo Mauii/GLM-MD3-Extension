@@ -12,6 +12,22 @@ from .index import normalize_rel
 from .data_types import FileSource
 
 
+def clear_cached_textures(cache_root: Path) -> None:
+    if not cache_root.exists():
+        return
+    for file in cache_root.rglob("*"):
+        if file.is_file() and file.suffix.lower() in TEXTURE_EXTS:
+            file.unlink()
+    dirs = sorted(
+        (path for path in cache_root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in dirs:
+        if not any(directory.iterdir()):
+            directory.rmdir()
+
+
 def cleanup_cache(cache_root: Path, keep_set: set[str]) -> None:
     if not cache_root.exists():
         return
@@ -32,7 +48,13 @@ def cleanup_cache(cache_root: Path, keep_set: set[str]) -> None:
             pass
 
 
-def extract_assets(base_dir: Path, cache_root: Path, assets: List[Tuple[FileSource, Path]]):
+def extract_assets(
+    base_dir: Path,
+    cache_root: Path,
+    assets: List[Tuple[FileSource, Path]],
+    *,
+    clean_stale: bool = True,
+):
     cache_root.mkdir(parents=True, exist_ok=True)
     texture_map: Dict[str, str] = {}
     keep: set[str] = set()
@@ -54,7 +76,8 @@ def extract_assets(base_dir: Path, cache_root: Path, assets: List[Tuple[FileSour
             continue
         if dest_path.suffix.lower() in TEXTURE_EXTS:
             texture_map[dest_path.stem.lower()] = str(dest_path)
-    cleanup_cache(cache_root, keep)
+    if clean_stale:
+        cleanup_cache(cache_root, keep)
     return texture_map, failed
 
 

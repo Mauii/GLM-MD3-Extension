@@ -5,7 +5,7 @@ bl_info = {
     "author": "Maui",
     "version": (0, 5, 6),
     "blender": (5, 2, 0),
-    "location": "View3D > Sidebar > PK3",
+    "location": "View3D > Sidebar > GLM-MD3-Ex",
     "description": "Browse PK3 files, import/extract md3/glm from assets, Weapon Modding tools.",
     "category": "Import-Export Extension",
 }

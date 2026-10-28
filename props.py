@@ -128,7 +128,7 @@ def _add_header_item(props, label):
 def refresh_model_list(context) -> None:
     if not context or not getattr(context, "scene", None):
         return
-    props = context.scene.pk3_browser
+    props = context.scene.glm_md3_extension
     index = ensure_index(get_base_dir(props.game_path))
     props.model_items.clear()
     clear_skin(props)
@@ -219,7 +219,7 @@ def model_type_enum_items(self, context):
 
 def skin_enum_items(self, context):
     try:
-        props = context.scene.pk3_browser if context and getattr(context, "scene", None) else self
+        props = context.scene.glm_md3_extension if context and getattr(context, "scene", None) else self
     except Exception:
         props = self
     model_name = get_selected_model_from_props(props) if hasattr(props, "model_items") else None

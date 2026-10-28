@@ -618,7 +618,7 @@ class PK3_OT_import_model(Operator):
     import_companions: BoolProperty(default=True, options={"HIDDEN"}) # pyright: ignore[reportInvalidTypeForm]
 
     def execute(self, context):
-        props = context.scene.pk3_browser
+        props = context.scene.glm_md3_extension
         base_dir = get_base_dir(props.game_path)
         if not base_dir.is_dir():
             self.report({"ERROR"}, "Game path is invalid")
@@ -896,7 +896,7 @@ class PK3_OT_apply_skin(Operator):
     bl_label = "Apply Skin Textures"
 
     def execute(self, context):
-        props = context.scene.pk3_browser
+        props = context.scene.glm_md3_extension
         base_dir = get_base_dir(props.game_path)
         if not base_dir.is_dir():
             self.report({"ERROR"}, "Game path is invalid")
@@ -963,7 +963,7 @@ class PK3_OT_extract_model(Operator):
     bl_label = "Extract Model"
 
     def execute(self, context):
-        props = context.scene.pk3_browser
+        props = context.scene.glm_md3_extension
         base_dir = get_base_dir(props.game_path)
         if not base_dir.is_dir():
             self.report({"ERROR"}, "Game path is invalid")
@@ -1052,7 +1052,7 @@ class PK3_OT_prepare_modview(Operator):
     bl_label = "Prepare ModView Directory"
 
     def execute(self, context):
-        base_dir = get_base_dir(context.scene.pk3_browser.game_path)
+        base_dir = get_base_dir(context.scene.glm_md3_extension.game_path)
         if not base_dir.is_dir():
             self.report({"ERROR"}, "Game path is invalid")
             return {"CANCELLED"}
@@ -1078,7 +1078,7 @@ class PK3_OT_setup_weapon_preview(Operator):
     bl_label = "Setup Weapon Preview"
 
     def execute(self, context):
-        props = context.scene.pk3_browser
+        props = context.scene.glm_md3_extension
         if props.model_type != "weapons2":
             self.report({"ERROR"}, "Weapon setup is only available for weapons2")
             return {"CANCELLED"}
@@ -1111,7 +1111,7 @@ class PK3_OT_prepare_weapon_export(Operator):
     ) # pyright: ignore[reportInvalidTypeForm]
 
     def execute(self, context):
-        props = context.scene.pk3_browser
+        props = context.scene.glm_md3_extension
         if props.model_type != "weapons2":
             self.report({"ERROR"}, "Export preparation is only available for weapons2")
             return {"CANCELLED"}

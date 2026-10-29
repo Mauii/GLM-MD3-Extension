@@ -8,8 +8,10 @@ from .operators import (
     PK3_OT_import_model,
     PK3_OT_prepare_modview,
     PK3_OT_prepare_weapon_export,
+    PK3_OT_remove_camera_invisible_faces,
     PK3_OT_refresh_models,
     PK3_OT_setup_weapon_preview,
+    _is_camera_view,
 )
 from .index import normalize_rel
 from .props import get_selected_model_item
@@ -46,7 +48,6 @@ class PK3_PT_panel(Panel):
     bl_region_type = "UI"
     bl_category = "GLM/MD3 Extension"
     bl_label = "GLM/MD3 Extension"
-    bl_ui_units_x = 2000
 
     def draw(self, context):
         props = context.scene.glm_md3_extension
@@ -123,6 +124,12 @@ class PK3_PT_panel(Panel):
                             PK3_OT_setup_weapon_preview.bl_idname,
                             text="Setup Weapon",
                             icon="CONSTRAINT",
+                        )
+                        row = layout.row()
+                        row.enabled = _is_camera_view(context)
+                        row.operator(
+                            PK3_OT_remove_camera_invisible_faces.bl_idname,
+                            icon="CAMERA_DATA",
                         )
                         layout.label(text="Prepare to Export", icon="EXPORT")
                         row = layout.row(align=True)

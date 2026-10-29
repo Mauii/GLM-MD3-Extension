@@ -16,6 +16,10 @@ def format_skin_label(rel: Path) -> str:
     return stem
 
 
+def is_skin_off(texture_name: str) -> bool:
+    return texture_name.strip().casefold() in {"*off", "off"}
+
+
 def parse_skin_text(text: str) -> Dict[str, str]:
     mapping: Dict[str, str] = {}
     for raw_line in text.splitlines():
@@ -27,8 +31,6 @@ def parse_skin_text(text: str) -> Dict[str, str]:
         part, tex = line.split(",", 1)
         part = part.strip()
         tex = tex.strip()
-        if tex.lower() in {"*off", "off"}:
-            continue
         if part:
             mapping[part] = tex
     return mapping
@@ -57,12 +59,30 @@ def resolve_texture(
                 return fs
         return fs_list[0]
 
-    for ext in TEXTURE_EXTS:
+    requested_ext = tex_path.suffix.lower()
+    extensions = (
+        [requested_ext] if requested_ext in TEXTURE_EXTS else []
+    )
+    extensions.extend(
+        ext
+        for ext in (".tga", ".png", ".jpg", ".jpeg", ".bmp", ".dds")
+        if ext not in extensions
+    )
+    for ext in extensions:
         candidate = tex_path.with_suffix(ext)
         norm = normalize_rel(candidate)
         if norm in index["textures_by_rel"]:
             fs = choose(index["textures_by_rel"][norm])
             return fs, fs.rel_path
+
+    shader_name = normalize_rel(tex_path.with_suffix(""))
+    shader_map = index.get("shader_maps", {}).get(shader_name)
+    if shader_map:
+        mapped_path = Path(shader_map)
+        if normalize_rel(mapped_path) != normalize_rel(tex_path):
+            resolved = resolve_texture(index, shader_map, preferred)
+            if resolved:
+                return resolved
 
     stem = tex_path.stem.lower()
     if stem in index["textures_by_stem"]:
@@ -155,6 +175,8 @@ def collect_assets_for_skin(index: Dict, base_dir: Path, model_name: str, skin_r
     missing: List[str] = []
     replacements: Dict[str, str] = {}
     for tex in skin_map.values():
+        if is_skin_off(tex):
+            continue
         resolved = resolve_texture(index, tex, primary)
         if resolved:
             textures.append(resolved)

@@ -10,6 +10,7 @@ from . import pk3
 from .constants import TEXTURE_EXTS
 from .index import normalize_rel
 from .data_types import FileSource
+from .texture_formats import load_texture
 
 
 def clear_cached_textures(cache_root: Path) -> None:
@@ -102,13 +103,14 @@ def rewrite_skin_paths(cache_root: Path, skin_rel: Path, replacements: Dict[str,
 def relink_images_from_cache(texture_map: Dict[str, str]) -> None:
     if not texture_map:
         return
-    for img in bpy.data.images:
+    for img in list(bpy.data.images):
         stem = Path(img.name).stem.lower()
         if stem in texture_map:
             new_path = texture_map[stem]
-            if img.filepath != new_path:
-                img.filepath = new_path
             try:
-                img.reload()
-            except Exception:  # noqa: BLE001
-                pass
+                loaded = load_texture(new_path, check_existing=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Failed to load cached texture {new_path}: {exc}")
+                continue
+            if loaded != img:
+                img.user_remap(loaded)

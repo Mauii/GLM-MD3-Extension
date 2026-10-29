@@ -12,6 +12,7 @@ from .operators import (
     PK3_OT_import_model,
     PK3_OT_prepare_modview,
     PK3_OT_prepare_weapon_export,
+    PK3_OT_remove_camera_invisible_faces,
     PK3_OT_refresh_models,
     PK3_OT_setup_weapon_preview,
 )
@@ -27,6 +28,7 @@ CLASSES = (
     PK3_OT_prepare_modview,
     PK3_OT_prepare_weapon_export,
     PK3_OT_setup_weapon_preview,
+    PK3_OT_remove_camera_invisible_faces,
     PK3_UL_models,
     PK3_PT_panel,
 )

@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from . import pk3
 from .constants import MODEL_CATEGORIES, TEXTURE_EXTS
 from .data_types import FileSource, ModelSource
+from .shaders import parse_shader_text
 
 PK3_INDEX_CACHE: Optional[Dict] = None
 
@@ -36,6 +37,22 @@ def source_priority(src: ModelSource) -> Tuple[int, int]:
     return (1, 1)
 
 
+def _skin_sort_key(path: Path) -> Tuple[int, str]:
+    stem = path.stem.lower()
+    preferred = {
+        "model_default": 0,
+        "model_red": 1,
+        "model_blue": 2,
+    }
+    if stem in preferred:
+        priority = preferred[stem]
+    elif stem.startswith("model_"):
+        priority = 3
+    else:
+        priority = 4
+    return priority, path.as_posix().lower()
+
+
 def clear_index() -> None:
     global PK3_INDEX_CACHE
     PK3_INDEX_CACHE = None
@@ -61,6 +78,7 @@ def build_index(base_dir: Path) -> Dict:
     textures_by_stem: Dict[str, List[FileSource]] = {}
     textures_by_dir: Dict[str, List[FileSource]] = {}
     gla_index: Dict[str, List[FileSource]] = {}
+    shader_maps: Dict[str, str] = {}
 
     def add_texture(rel: Path, origin: str, container: Optional[Path]):
         fs = FileSource(origin, container, rel)
@@ -132,6 +150,13 @@ def build_index(base_dir: Path) -> Dict:
                         continue
                     rel = Path(info.filename)
                     suffix = rel.suffix.lower()
+                    if suffix == ".shader":
+                        shader_maps.update(
+                            parse_shader_text(
+                                zf.read(info).decode("utf-8", errors="ignore")
+                            )
+                        )
+                        continue
                     if suffix in TEXTURE_EXTS:
                         add_texture(rel, "pk3", pk3_path)
                         continue
@@ -159,6 +184,12 @@ def build_index(base_dir: Path) -> Dict:
         except pk3.ArchiveError:
             print(f"Skipping invalid pk3: {pk3_path}")
             continue
+
+    for shader_path in sorted(base_dir.rglob("*.shader")):
+        rel = shader_path.relative_to(base_dir)
+        shader_maps.update(
+            parse_shader_text(shader_path.read_text(errors="ignore"))
+        )
 
     # Scan disk models
     models_root = base_dir / "models"
@@ -218,7 +249,10 @@ def build_index(base_dir: Path) -> Dict:
         if not glm_sources:
             continue
         primary = sorted(glm_sources, key=source_priority)[0]
-        skins = sorted({Path(s) for src in sources_list for s in src.skins}, key=lambda p: p.as_posix().lower())
+        skins = sorted(
+            {Path(s) for src in sources_list for s in src.skins},
+            key=_skin_sort_key,
+        )
         models[name] = {"sources": sources_list, "primary": primary, "skins": skins}
 
     return {
@@ -229,4 +263,5 @@ def build_index(base_dir: Path) -> Dict:
         "textures_by_stem": textures_by_stem,
         "textures_by_dir": textures_by_dir,
         "gla_index": gla_index,
+        "shader_maps": shader_maps,
     }

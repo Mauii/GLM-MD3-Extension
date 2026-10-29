@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bmesh
 from math import radians
 from pathlib import Path, PurePosixPath
 import re
@@ -8,6 +9,8 @@ import shutil
 import bpy
 from bpy.props import BoolProperty, EnumProperty
 from bpy.types import Operator
+from bpy_extras import view3d_utils
+from mathutils import Vector
 
 from . import pk3
 from .cache import (
@@ -30,10 +33,22 @@ from .skin import (
     collect_assets_for_skin,
     derive_skin_suffix,
     find_skin_source,
+    is_skin_off,
     parse_skin_text,
     read_text_from_source,
     resolve_texture,
 )
+from .texture_formats import load_texture
+
+
+def _is_camera_view(context) -> bool:
+    space = context.space_data
+    return (
+        space is not None
+        and space.type == "VIEW_3D"
+        and space.region_3d is not None
+        and space.region_3d.view_perspective == "CAMERA"
+    )
 
 
 def _materialize_model_file(base_dir: Path, entry: dict) -> Path:
@@ -123,7 +138,11 @@ def _referenced_player_model_names(model_entry: dict, base_dir: Path) -> set[str
         for skin_path in source.skins:
             skin_source = FileSource(source.origin, source.container, Path(skin_path))
             skin_text = read_text_from_source(skin_source, base_dir)
-            texture_paths.extend(parse_skin_text(skin_text).values())
+            texture_paths.extend(
+                texture
+                for texture in parse_skin_text(skin_text).values()
+                if not is_skin_off(texture)
+            )
 
     ignore_stormtrooper = any(
         tuple(
@@ -493,7 +512,7 @@ def _load_weapon_textures(objects, texture_map: dict):
                 continue
 
             try:
-                image = bpy.data.images.load(texture_path, check_existing=True)
+                image = load_texture(texture_path, check_existing=True)
             except Exception as exc:  # noqa: BLE001
                 failed.append(f"{texture_path}: {exc}")
                 continue
@@ -519,8 +538,8 @@ def _load_weapon_textures(objects, texture_map: dict):
                 for link in material.node_tree.links
             ):
                 material.node_tree.links.new(
-                    image_node.outputs["Color"],
                     principled.inputs["Base Color"],
+                    image_node.outputs["Color"],
                 )
     return failed
 
@@ -546,9 +565,14 @@ def _assign_material_texture(material, image) -> None:
             if link.to_node == principled and link.to_socket == base_color:
                 material.node_tree.links.remove(link)
         material.node_tree.links.new(
-            image_nodes[0].outputs["Color"],
             base_color,
+            image_nodes[0].outputs["Color"],
         )
+
+
+def _format_missing_textures(missing: list[str]) -> str:
+    unique_missing = list(dict.fromkeys(missing))
+    return f"Missing textures ({len(missing)}): {', '.join(unique_missing)}"
 
 
 def _apply_skin_to_scene(
@@ -558,6 +582,7 @@ def _apply_skin_to_scene(
     model_name: str,
     skin_rel: Path,
     cache_root: Path,
+    objects=None,
 ):
     entry = index["models"][model_name]
     primary = entry["primary"]
@@ -568,6 +593,8 @@ def _apply_skin_to_scene(
     texture_paths = {}
     missing = []
     for part_name, texture_name in skin_map.items():
+        if is_skin_off(texture_name):
+            continue
         resolved = resolve_texture(index, texture_name, primary)
         if resolved is None:
             missing.append(texture_name)
@@ -575,14 +602,28 @@ def _apply_skin_to_scene(
         _, texture_rel = resolved
         texture_paths[part_name.strip().casefold()] = cache_root / texture_rel
 
-    applied = 0
+    skin_entries = {
+        part_name.strip().casefold(): texture_name
+        for part_name, texture_name in skin_map.items()
+    }
+    matched = 0
     failed = []
-    for obj in scene.objects:
+    target_objects = objects if objects is not None else scene.objects
+    for obj in target_objects:
         if obj.type != "MESH":
             continue
         if "g2_configured" not in obj and "g2_prop_name" not in obj:
             continue
         part_name = obj.g2_prop.name.strip().casefold()
+        texture_name = skin_entries.get(part_name)
+        if texture_name is None:
+            continue
+        is_off = is_skin_off(texture_name)
+        obj.hide_set(is_off)
+        obj.hide_render = is_off
+        matched += 1
+        if is_off:
+            continue
         texture_path = texture_paths.get(part_name)
         if texture_path is None:
             continue
@@ -590,16 +631,14 @@ def _apply_skin_to_scene(
             failed.append(f"{obj.name}: cached texture missing: {texture_path}")
             continue
         try:
-            image = bpy.data.images.load(str(texture_path), check_existing=True)
-            image.reload()
+            image = load_texture(texture_path, check_existing=True)
         except Exception as exc:  # noqa: BLE001
             failed.append(f"{obj.name}: {texture_path}: {exc}")
             continue
         for slot in obj.material_slots:
             if slot.material is not None:
                 _assign_material_texture(slot.material, image)
-        applied += 1
-    return applied, missing, failed
+    return matched, missing, failed
 
 
 class PK3_OT_refresh_models(Operator):
@@ -873,6 +912,7 @@ class PK3_OT_import_model(Operator):
         rewrite_skin_paths(cache_root, skin_rel, replacements)
         glm_dest = cache_root / assets[0][1]
         skin_suffix = derive_skin_suffix(skin_rel)
+        existing_objects = {obj.as_pointer() for obj in bpy.data.objects}
         try:
             bpy.ops.import_scene.glm(
                 filepath=str(glm_dest),
@@ -884,10 +924,33 @@ class PK3_OT_import_model(Operator):
             self.report({"ERROR"}, f"Import failed: {exc}")
             return {"CANCELLED"}
         relink_images_from_cache(texture_map)
+        imported_objects = [
+            obj
+            for obj in bpy.data.objects
+            if obj.as_pointer() not in existing_objects
+        ]
+        try:
+            _, _, failed_to_apply = _apply_skin_to_scene(
+                context.scene,
+                index,
+                base_dir,
+                model_name,
+                skin_rel,
+                cache_root,
+                objects=imported_objects,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.report({"ERROR"}, f"Failed to apply imported skin: {exc}")
+            return {"CANCELLED"}
         if missing:
-            self.report({"WARNING"}, f"Missing textures: {len(missing)}")
+            self.report({"WARNING"}, _format_missing_textures(missing))
         if failed:
             self.report({"WARNING"}, f"Failed to extract: {', '.join(failed)}")
+        if failed_to_apply:
+            self.report(
+                {"WARNING"},
+                f"Failed to apply skin texture(s): {', '.join(failed_to_apply)}",
+            )
         return {"FINISHED"}
 
 
@@ -947,7 +1010,7 @@ class PK3_OT_apply_skin(Operator):
         if skin_missing:
             missing.extend(skin_missing)
         if missing:
-            self.report({"WARNING"}, f"Missing textures: {len(missing)}")
+            self.report({"WARNING"}, _format_missing_textures(missing))
         if failed:
             self.report({"WARNING"}, f"Failed to extract: {', '.join(failed)}")
         if failed_to_apply:
@@ -1096,6 +1159,118 @@ class PK3_OT_setup_weapon_preview(Operator):
             self.report({"ERROR"}, f"Failed to set up weapon preview: {exc}")
             return {"CANCELLED"}
         self.report({"INFO"}, "Weapon preview hierarchy and camera are ready")
+        return {"FINISHED"}
+
+
+class PK3_OT_remove_camera_invisible_faces(Operator):
+    bl_idname = "pk3.remove_camera_invisible_faces"
+    bl_label = "Remove Camera-Invisible Faces"
+    bl_options = {"REGISTER", "UNDO"}
+    bl_description = (
+        "Delete faces of the active mesh not hit by a pixel ray from the "
+        "camera-view viewport"
+    )
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == "MESH"
+
+    def invoke(self, context, _event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, _context):
+        layout = self.layout
+        layout.label(text="This removes faces from the active mesh (undoable).")
+        layout.label(text="Blender may freeze briefly while scanning the mesh.")
+
+    def execute(self, context):
+        obj = context.active_object
+        if not _is_camera_view(context):
+            self.report({"ERROR"}, "Switch to the active camera view with Numpad 0 first")
+            return {"CANCELLED"}
+        camera = context.scene.camera
+        if camera is None or camera.type != "CAMERA":
+            self.report({"ERROR"}, "Set an active scene camera first")
+            return {"CANCELLED"}
+        if camera.data.type not in {"PERSP", "ORTHO"}:
+            self.report({"ERROR"}, "Only perspective and orthographic cameras are supported")
+            return {"CANCELLED"}
+        if obj.mode != "OBJECT":
+            self.report({"ERROR"}, "Switch the active mesh to Object Mode first")
+            return {"CANCELLED"}
+        if obj.modifiers:
+            self.report(
+                {"ERROR"},
+                "Apply or remove the active mesh's modifiers before pruning faces",
+            )
+            return {"CANCELLED"}
+        if not obj.data.polygons:
+            self.report({"WARNING"}, "The active mesh has no faces")
+            return {"CANCELLED"}
+
+        try:
+            region = next(
+                (region for region in context.area.regions if region.type == "WINDOW"),
+                None,
+            )
+            if region is None:
+                self.report({"ERROR"}, "Could not find the 3D View window region")
+                return {"CANCELLED"}
+            region_3d = context.space_data.region_3d
+            depsgraph = context.evaluated_depsgraph_get()
+            visible_faces = set()
+            for pixel_y in range(region.height):
+                for pixel_x in range(region.width):
+                    coordinate = Vector((pixel_x + 0.5, pixel_y + 0.5))
+                    ray_origin = view3d_utils.region_2d_to_origin_3d(
+                        region,
+                        region_3d,
+                        coordinate,
+                        clamp=camera.data.clip_end,
+                    )
+                    ray_direction = view3d_utils.region_2d_to_vector_3d(
+                        region,
+                        region_3d,
+                        coordinate,
+                    )
+                    hit, _, _, face_index, hit_obj, _ = context.scene.ray_cast(
+                        depsgraph,
+                        ray_origin,
+                        ray_direction,
+                        distance=camera.data.clip_end,
+                    )
+                    if hit and getattr(hit_obj, "original", hit_obj) == obj:
+                        visible_faces.add(face_index)
+        except Exception as exc:
+            self.report({"ERROR"}, f"Camera visibility scan failed: {exc}")
+            return {"CANCELLED"}
+
+        mesh = obj.data
+        bm = bmesh.new()
+        try:
+            bm.from_mesh(mesh)
+            bm.faces.ensure_lookup_table()
+            bm.faces.index_update()
+            faces_to_remove = [
+                face for face in bm.faces if face.index not in visible_faces
+            ]
+            removed_count = len(faces_to_remove)
+            if removed_count:
+                bmesh.ops.delete(bm, geom=faces_to_remove, context="FACES")
+                bm.to_mesh(mesh)
+                mesh.update()
+        except Exception as exc:
+            self.report({"ERROR"}, f"Could not remove invisible faces: {exc}")
+            return {"CANCELLED"}
+        finally:
+            bm.free()
+
+        self.report(
+            {"INFO"},
+            f"Removed {removed_count} face(s); kept {len(visible_faces)} "
+            "camera-visible face(s)",
+        )
         return {"FINISHED"}
 
 

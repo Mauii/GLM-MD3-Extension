@@ -48,7 +48,9 @@ Click **Setup Weapon** to automatically configure the weapon hierarchy:
 #### GLM Imports and Skins
 * **Weapon GLMs:** Imported via the GLM importer with no skin assigned. Textures from the same folder are staged in the cache.
 * **Player GLMs:** Imported via the GLM importer while retaining their selected skin.
-* **Apply Skin:** For player models, this matches each scene mesh's `g2_prop.name` attribute to the selected `.skin` surface and assigns the corresponding texture from the cache.
+* **Skin Order:** Player skins are listed with `model_default.skin` first, followed by `model_red.skin`, `model_blue.skin`, and other `model_` skins.
+* **Apply Skin:** For player models, this matches each scene mesh's `g2_prop.name` attribute to the selected `.skin` surface, assigns the corresponding texture from the cache, and updates mesh visibility. Surfaces set to `*off` in a skin are hidden; applying another skin updates them again.
+* **Shader Textures:** Skin texture paths are resolved by checking supported file extensions and shader definitions. When a `.shader` file maps a shader name to an image, its first image map is used as the diffuse texture.
 
 ### Export Preparation
 Under **Prepare for Export**, you can isolate components for clean exporting. Both options remove the weapon's Copy Transforms constraint from `tag_weapon` (without changing object parenting) and delete the **Weapon Preview Camera**.
@@ -58,3 +60,8 @@ Under **Prepare for Export**, you can isolate components for clean exporting. Bo
 
 ### File Extraction
 Use **Extract Model** to copy the selected model's entire folder, including all assets, beneath a chosen destination directory. For player models, the utility also reads all `.skin` files and extracts any additional player-model folders referenced by the underlying texture paths.
+
+### Camera-Based Mesh Cleanup
+With a mesh active, use **Remove Camera-Invisible Faces** to remove faces that are not hit by any viewport pixel ray. The button is enabled only while looking through the active scene camera (press Numpad 0 to enter camera view). The scan uses the actual 3D View, including visible areas outside the camera frame, and other scene geometry can occlude the active mesh.
+
+The operation edits the active mesh directly, requires Object Mode, and does not support modifiers on that mesh. It scans every pixel within the mesh's projected viewport bounds. The confirmation dialog warns that Blender may briefly freeze during the scan. Visibility is based on opaque geometry and does not account for transparent materials or alpha cutouts.

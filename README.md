@@ -37,7 +37,7 @@ Each new model import automatically clears previously cached textures.
 * **Import Weapon:** Imports the selected weapon MD3 along with its matching `_hand` MD3. If a matching `_barrel` MD3 exists, it is imported last.
 * **Numbered Weapon Parts:** Same functionality as the previous, just makes it possible to import `weapon_name_x.md3` (where x is a number).
 * **Import Selected MD3:** Imports strictly the selected `weapons2` MD3 without its companion hand or barrel files.
-* **Scene Timeline:** A successful MD3 import automatically sets the scene end frame to 14.
+* **Scene Timeline:** After an MD3 import, the scene end frame is set to the last keyframe found on the imported model's animation data. If the imported model has no animation data, the existing scene end frame is preserved.
 
 #### Weapon Setup
 Click **Setup Weapon** to automatically configure the weapon hierarchy:

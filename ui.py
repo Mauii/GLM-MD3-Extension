@@ -54,6 +54,7 @@ class PK3_PT_panel(Panel):
         layout = self.layout
         layout.prop(props, "game_path")
         if props.game_path.strip():
+            layout.separator()
             layout.operator(
                 PK3_OT_prepare_modview.bl_idname,
                 text="Prepare ModView Directory",
@@ -80,11 +81,12 @@ class PK3_PT_panel(Panel):
             if props.model_type == "players":
                 layout.prop(props, "skin_name")
                 row = layout.row(align=True)
+                layout.label(
+                    text="Requires MrWonko's Blender-Jedi-Academy-Tools add-on",
+                    icon="INFO",
+                )
                 row.operator(PK3_OT_import_model.bl_idname, icon="IMPORT")
                 row.operator(PK3_OT_apply_skin.bl_idname, text="Apply Skin", icon="TEXTURE")
-                layout.separator()
-                layout.prop(props, "model_extract_dir")
-                layout.operator(PK3_OT_extract_model.bl_idname, icon="FILE_FOLDER")
             else:
                 if props.model_type == "weapons2" and selected_item.file_format == "glm":
                     layout.operator(
@@ -157,11 +159,11 @@ class PK3_PT_panel(Panel):
                         ).keep_component = "WEAPON"
                 else:
                     layout.label(
-                        text="Import is currently supported for player GLM models",
+                        text="Import is not supported for this type yet, let Maui know.",
                         icon="INFO",
                     )
-                layout.separator()
-                layout.prop(props, "model_extract_dir")
-                layout.operator(PK3_OT_extract_model.bl_idname, icon="FILE_FOLDER")
+            layout.separator()
+            layout.prop(props, "model_extract_dir")
+            layout.operator(PK3_OT_extract_model.bl_idname, icon="FILE_FOLDER")
         else:
             layout.label(text="Set the GAMEDATA path to begin.", icon="INFO")

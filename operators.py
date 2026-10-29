@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import bmesh
-from math import radians
+from math import ceil, radians
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -79,7 +79,8 @@ def _extract_model_folder(
     destination_rel: Path | None = None,
 ) -> int:
     source_dir = base_dir / folder_rel
-    destination_dir = output_dir / (destination_rel or folder_rel)
+    # AANPASSING: Gebruik direct output_dir als destination_rel niet is meegegeven
+    destination_dir = output_dir / (destination_rel or Path("."))
     source_resolved = source_dir.resolve()
     destination_resolved = destination_dir.resolve()
 
@@ -274,6 +275,27 @@ def _import_md3_objects(operator, filepath: Path):
         if obj.as_pointer() not in existing_objects
     ]
     return result, imported_objects
+
+
+def _imported_animation_end_frame(objects) -> int | None:
+    end_frame = None
+    for obj in objects:
+        animation_data = getattr(obj, "animation_data", None)
+        if animation_data is not None and animation_data.action is not None:
+            action_end = animation_data.action.frame_range[1]
+            end_frame = (
+                action_end if end_frame is None else max(end_frame, action_end)
+            )
+
+        shape_keys = getattr(getattr(obj, "data", None), "shape_keys", None)
+        animation_data = getattr(shape_keys, "animation_data", None)
+        if animation_data is not None and animation_data.action is not None:
+            action_end = animation_data.action.frame_range[1]
+            end_frame = (
+                action_end if end_frame is None else max(end_frame, action_end)
+            )
+
+    return None if end_frame is None else ceil(end_frame)
 
 
 def _find_imported_object(objects, name: str, object_type: str):
@@ -657,6 +679,9 @@ class PK3_OT_import_model(Operator):
     import_companions: BoolProperty(default=True, options={"HIDDEN"}) # pyright: ignore[reportInvalidTypeForm]
 
     def execute(self, context):
+        if hasattr(bpy.types.Action, "curves") and not hasattr(bpy.types.Action, "fcurves"):
+            bpy.types.Action.fcurves = property(lambda self: self.curves)
+
         props = context.scene.glm_md3_extension
         base_dir = get_base_dir(props.game_path)
         if not base_dir.is_dir():
@@ -878,7 +903,12 @@ class PK3_OT_import_model(Operator):
             if "FINISHED" not in result:
                 self.report({"ERROR"}, "MD3 importer did not finish")
                 return {"CANCELLED"}
-            context.scene.frame_end = 14
+            animation_end_frame = _imported_animation_end_frame(imported_objects)
+            if animation_end_frame is not None:
+                context.scene.frame_end = max(
+                    context.scene.frame_start,
+                    animation_end_frame,
+                )
             if failed_textures:
                 self.report(
                     {"WARNING"},
@@ -898,7 +928,12 @@ class PK3_OT_import_model(Operator):
             return {"CANCELLED"}
         skin_rel = Path(props.skin_name)
         try:
-            assets, missing, replacements = collect_assets_for_skin(index, base_dir, model_name, skin_rel)
+            assets, missing, replacements = collect_assets_for_skin(
+                index,
+                base_dir,
+                model_name,
+                skin_rel,
+            )
         except Exception as exc:  # noqa: BLE001
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -1064,16 +1099,17 @@ class PK3_OT_extract_model(Operator):
         try:
             output_dir = Path(props.model_extract_dir).expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
+
+            # AANPASSING: destination_rel gebruikt nu altijd Path(folder_rel.name)
             copied = _extract_model_folder(
                 base_dir,
                 folder_rel,
                 origin,
                 container,
                 output_dir,
-                destination_rel=Path(folder_rel.name)
-                if props.model_type == "players"
-                else None,
+                destination_rel=Path(folder_rel.name),
             )
+
             unresolved_models = []
             if props.model_type == "players":
                 for referenced_name in sorted(
@@ -1101,6 +1137,7 @@ class PK3_OT_extract_model(Operator):
         except Exception as exc:  # noqa: BLE001
             self.report({"ERROR"}, f"Model extraction failed: {exc}")
             return {"CANCELLED"}
+
         self.report({"INFO"}, f"Extracted {copied} file(s) to {output_dir}")
         if unresolved_models:
             self.report(
